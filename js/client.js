@@ -2,7 +2,7 @@ const PROGRAM_ID = "Hua5xPD28e5ovftEuzmxRwonzYvsNahGyxX8fJs5f1KD";
 
 // Read the generated IDL.
 const idl = JSON.parse(
-  require("fs").readFileSync("./target/idl/basic_0.json", "utf8")
+  require("fs").readFileSync("../target/idl/sharing.json", "utf8")
 );
 
 // Address of the deployed program.
@@ -12,4 +12,4 @@ const programId = new anchor.web3.PublicKey(PROGRAM_ID);
 const program = new anchor.Program(idl, programId);
 
 // Execute the RPC.
-await program.rpc.initialize();
+await program.rpc.init_sharing_account();

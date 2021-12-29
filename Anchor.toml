@@ -1,5 +1,5 @@
 [programs.localnet]
-sharing_protocol = "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS"
+sharing = "Hua5xPD28e5ovftEuzmxRwonzYvsNahGyxX8fJs5f1KD"
 
 [registry]
 url = "https://anchor.projectserum.com"
