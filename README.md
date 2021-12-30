@@ -1,3 +1,9 @@
+## Considerations
+
+Once a listing (or rather, any purchaseable asset) has an affiliate link set up, the destination acct on the listing points at the sharing account's associated wrapped sol account.
+
+If someone purchases without the affiliate-purchase protocol, the money does not get distributed. <<< wowow >>>
+
 ## Todo
 
 - [ ] Finish protocol in lib.rs
