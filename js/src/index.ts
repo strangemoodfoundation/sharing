@@ -13,6 +13,7 @@ import {
 import { BN, Program, Provider, web3 } from '@project-serum/anchor';
 import { Sharing } from '../../target/types/sharing';
 import { Wallet } from '@project-serum/anchor/dist/cjs/provider';
+import { deserialize } from 'borsh';
 
 export default {
   MAINNET,
@@ -22,20 +23,18 @@ export default {
 
 const borshifyFloat = (a: number) => {
   const pieces = a.toString().split('.');
-  const splitAmount = parseInt(pieces[0]);
-  const splitDecimal = parseInt(pieces[1]);
+  const decimalLength = pieces.length > 0 ? pieces[1].length : 0;
 
-  return [splitAmount, splitDecimal];
+  return [(a * 10) ** decimalLength, decimalLength];
 };
 
-// you always get the same address if you pass the same mint and token account owner
 const getAssociatedTokenAddress = async (tokenAcctAuthority: PublicKey) => {
+  // you always get the same address if you pass the same mint and token account owner
   const associatedTokenAddress = await splToken.Token.getAssociatedTokenAddress(
     splToken.ASSOCIATED_TOKEN_PROGRAM_ID,
     splToken.TOKEN_PROGRAM_ID,
     splToken.NATIVE_MINT,
     tokenAcctAuthority
-    // true
   );
 
   return associatedTokenAddress;
@@ -77,10 +76,49 @@ const getOrCreateAssociatedTokenAccount = async (
   };
 };
 
-const getSharingAccounts = async (
+const createEscrowTokenAccountInstructions = async (
   connection: Connection,
   user: PublicKey,
-  assetPubkey: PublicKey
+  sharingPDA: PublicKey
+) => {
+  const tx = new Transaction();
+  const escrowKeypair = Keypair.generate();
+
+  // alloc space for account
+  tx.add(
+    SystemProgram.createAccount({
+      fromPubkey: user,
+      /** Public key of the created account */
+      newAccountPubkey: escrowKeypair.publicKey,
+      /** Amount of lamports to transfer to the created account */
+      lamports: await splToken.Token.getMinBalanceRentForExemptAccount(
+        connection
+      ),
+      /** Amount of space in bytes to allocate to the created account */
+      space: splToken.AccountLayout.span,
+      /** Public key of the program to assign as the owner of the created account */
+      programId: splToken.TOKEN_PROGRAM_ID,
+    })
+  );
+
+  // initialize token acct
+  tx.add(
+    splToken.Token.createInitAccountInstruction(
+      splToken.TOKEN_PROGRAM_ID,
+      splToken.NATIVE_MINT,
+      escrowKeypair.publicKey,
+      sharingPDA
+    )
+  );
+
+  return { tx, escrowKeypair };
+};
+
+const getSharingAccount = async (
+  connection: Connection,
+  user: PublicKey,
+  assetPubkey: PublicKey,
+  sharingProgramId?: PublicKey
 ) => {
   // wrapped SOL account associated with the current user.
   let { address: associatedSolAddress, instruction: createAccountInstruction } =
@@ -89,45 +127,62 @@ const getSharingAccounts = async (
   // The sharing account address is derived from the current user's token acct
   let [sharingPDA, sharingBump] = await pda.sharing(
     associatedSolAddress,
-    assetPubkey
+    assetPubkey,
+    sharingProgramId
   );
-
-  // // The sharing account TOKEN address is related to the sharing acct address
-  const escrowKeypair = Keypair.generate();
-
-  // alloc space for account
-  const createEscrowTokenAcctInstruction = SystemProgram.createAccount({
-    fromPubkey: user,
-    /** Public key of the created account */
-    newAccountPubkey: escrowKeypair.publicKey,
-    /** Amount of lamports to transfer to the created account */
-    lamports: await splToken.Token.getMinBalanceRentForExemptAccount(
-      connection
-    ),
-    /** Amount of space in bytes to allocate to the created account */
-    space: splToken.AccountLayout.span,
-    /** Public key of the program to assign as the owner of the created account */
-    programId: splToken.TOKEN_PROGRAM_ID,
-  });
-
-  // initialize token acct
-  const initEscrowTokenAcctInstruction =
-    splToken.Token.createInitAccountInstruction(
-      splToken.TOKEN_PROGRAM_ID,
-      splToken.NATIVE_MINT,
-      escrowKeypair.publicKey,
-      sharingPDA
-    );
 
   return {
     associatedSolAddress,
-    initEscrowTokenAcctInstruction,
     sharingPDA,
     sharingBump,
     createAccountInstruction,
-    createEscrowTokenAcctInstruction,
-    escrowKeypair,
   };
+};
+
+/**
+ * @param connection
+ * @param user - purchasing the asset
+ * @param assetPubkey - some pubkey of a listing somewhere
+ * @param affiliateAccount
+ * @param purchaseTx
+ * @param sharingProgramId
+ */
+export const purchaseAssetByAffiliate = async (
+  connection: Connection,
+  program: Program<Sharing>,
+  user: PublicKey,
+  assetPubkey: PublicKey,
+  affiliateAccount: PublicKey,
+  purchaseTx: Transaction | TransactionInstruction,
+  sharingProgramId?: PublicKey
+) => {
+  const tx = new Transaction();
+
+  tx.add(purchaseTx);
+
+  const { sharingPDA } = await getSharingAccount(
+    connection,
+    user,
+    assetPubkey,
+    sharingProgramId
+  );
+
+  const sharingAcct = await program.account.sharingAccount.fetch(sharingPDA);
+
+  tx.add(
+    program.instruction.shareBalance({
+      accounts: {
+        user,
+        sharingAccount: sharingPDA,
+        tokenAccount: sharingAcct.tokenAccount,
+        depositAccount: sharingAcct.depositAccount,
+        affiliateAccount,
+        systemProgram: SystemProgram.programId,
+      },
+    })
+  );
+
+  return { tx };
 };
 
 /**
@@ -145,76 +200,71 @@ export const initSharingAccount = async (
 ) => {
   const tx = new Transaction();
   const {
-    createEscrowTokenAcctInstruction,
-    initEscrowTokenAcctInstruction,
     associatedSolAddress,
     sharingBump,
     sharingPDA,
     createAccountInstruction,
-    escrowKeypair,
-  } = await getSharingAccounts(connection, user, assetPubkey);
+  } = await getSharingAccount(connection, user, assetPubkey);
 
   if (createAccountInstruction) tx.add(createAccountInstruction);
-  if (createEscrowTokenAcctInstruction)
-    tx.add(createEscrowTokenAcctInstruction);
-  if (initEscrowTokenAcctInstruction) tx.add(initEscrowTokenAcctInstruction);
+
+  const { tx: escrowTx, escrowKeypair } =
+    await createEscrowTokenAccountInstructions(connection, user, sharingPDA);
+  tx.add(escrowTx);
 
   const [splitAmount, splitDecimal] = borshifyFloat(config.splitPercent);
+  tx.add(
+    program.instruction.initSharingAccount(
+      sharingBump,
+      assetPubkey,
+      new BN(splitAmount),
+      new BN(splitDecimal),
+      {
+        accounts: {
+          user,
 
-  const initTx = program.instruction.initSharingAccount(
-    sharingBump,
-    assetPubkey,
-    new BN(splitAmount),
-    new BN(splitDecimal),
-    {
-      accounts: {
-        user,
+          // auto generated
+          sharingAccount: sharingPDA,
 
-        // auto generated
-        sharingAccount: sharingPDA,
+          tokenAccount: escrowKeypair.publicKey,
+          depositAccount: associatedSolAddress,
 
-        tokenAccount: escrowKeypair.publicKey,
-        depositAccount: associatedSolAddress,
-
-        // system defaults
-        systemProgram: SystemProgram.programId,
-      },
-    }
+          // system defaults
+          systemProgram: SystemProgram.programId,
+        },
+      }
+    )
   );
 
-  tx.add(initTx);
   return { tx, signers: [escrowKeypair] };
 };
 
-// TODO
-export const updateSharingAccountPercentage = async (
+export const updateSharingAccountSplitPercent = async (
   connection: Connection,
   program: Program<Sharing>,
   user: PublicKey,
   assetPubkey: PublicKey,
   config: { splitPercent: number }
 ) => {
-  const {
-    // escrowBump,
-    // escrowTokenPDA,
-    associatedSolAddress,
-    // sharingBump,
-    sharingPDA,
-  } = await getSharingAccounts(connection, user, assetPubkey);
-
+  const { sharingPDA } = await getSharingAccount(connection, user, assetPubkey);
   const [splitAmount, splitDecimal] = borshifyFloat(config.splitPercent);
 
-  await program.rpc.updateSharingAccount(
-    new BN(splitAmount),
-    new BN(splitDecimal),
-    {
-      accounts: {
-        user: user,
-        sharingAccount: sharingPDA,
-        systemProgram: SystemProgram.programId,
-      },
-    }
+  const tx = new Transaction();
+  tx.add(
+    program.instruction.updateSharingAccountSplitPercent(
+      new BN(splitAmount),
+      new BN(splitDecimal),
+      {
+        accounts: {
+          user: user,
+          sharingAccount: sharingPDA,
+          systemProgram: SystemProgram.programId,
+        },
+      }
+    )
   );
+
+  return { tx };
 };
 
 export const fetchSharingProgram = async (
