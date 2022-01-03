@@ -46,16 +46,8 @@ use super::*;
     Ok(())
   }
 
-  // todo
   pub fn share_balance(ctx: Context<TransferAndShare>) -> ProgramResult {
-    // TODO check ownership and stuff
-     
-    // in js client, record current balance. then run this fn. then send it back.
-
     let token_acct_balance = ctx.accounts.token_account.amount;
-    // let amt = ctx.accounts.sharing_account.split_percent_amount;
-    // let dec = ctx.accounts.sharing_account.split_percent_decimals;
-    // let percent = amt + dec.
 
     // NOTE: we add 2 to decimals to turn it from "10%" to "0.1"
     let affiliate_cut = amount_as_float(ctx.accounts.sharing_account.split_percent_amount,ctx.accounts.sharing_account.split_percent_decimals + 2 );
@@ -69,13 +61,13 @@ use super::*;
     Ok(())
   }
 
-  // sends whatever is left back to the OG deposit account, can be called by anytone.
-  pub fn recover(ctx: Context<TransferAndShare>) -> ProgramResult {
-    // TODO
+  // sends whatever is left back to the OG deposit account, can be called by anyone.
+  pub fn recover(ctx: Context<Recover>) -> ProgramResult {
+    let token_acct_balance = ctx.accounts.token_account.amount;
+    execute_transfer(ctx.accounts.token_account.to_account_info(), ctx.accounts.deposit_account.to_account_info(), token_acct_balance)?;
 
     Ok(())
   }
-
 }
 
 #[derive(Accounts)]
@@ -108,9 +100,6 @@ pub struct UpdateSharingAccountSplitPercent<'info> {
   #[account(mut)]
   pub sharing_account: Account<'info, SharingAccount>,
 
-  // Cannot update deposit acct or token acct.
-  // pub deposit_account: Account<'info, TokenAccount>,
-
   pub user: Signer<'info>,
   pub system_program: Program<'info, System>, // <--- Anchor boilerplate
 }
@@ -133,14 +122,25 @@ pub struct TransferAndShare<'info> {
   #[account(mut)]
   pub affiliate_account: Account<'info, TokenAccount>,
 
-  // receives a portion!
-  // #[account(mut)]
-  // pub purchaser: Account<'info, TokenAccount>,
+  pub user: Signer<'info>,
+  pub system_program: Program<'info, System>, // <--- Anchor boilerplate
+}
+
+#[derive(Accounts)]
+pub struct Recover<'info> {
+  #[account(mut)]
+  pub sharing_account: Account<'info, SharingAccount>,
+
+  // temporary holder! purchasing a listing moves stuff here, which moves to other places
+  #[account(mut)]
+  pub token_account: Account<'info, TokenAccount>,
+
+  // owner of the asset / listing / primary holder
+  #[account(mut)]
+  pub deposit_account: Account<'info, TokenAccount>,
 
   pub user: Signer<'info>,
   pub system_program: Program<'info, System>, // <--- Anchor boilerplate
-
-  // pub purchase_program: AccountInfo<'info>, // <--- Purchase FN, like strangemood purchase
 }
 
 

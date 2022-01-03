@@ -13,7 +13,6 @@ import {
 import { BN, Program, Provider, web3 } from '@project-serum/anchor';
 import { Sharing } from '../../target/types/sharing';
 import { Wallet } from '@project-serum/anchor/dist/cjs/provider';
-import { deserialize } from 'borsh';
 
 export default {
   MAINNET,
@@ -116,6 +115,7 @@ const createEscrowTokenAccountInstructions = async (
 
 const getSharingAccount = async (
   connection: Connection,
+  program: Program<Sharing>,
   user: PublicKey,
   assetPubkey: PublicKey,
   sharingProgramId?: PublicKey
@@ -131,11 +131,14 @@ const getSharingAccount = async (
     sharingProgramId
   );
 
+  const sharingAccount = await program.account.sharingAccount.fetch(sharingPDA);
+
   return {
     associatedSolAddress,
     sharingPDA,
     sharingBump,
     createAccountInstruction,
+    sharingAccount,
   };
 };
 
@@ -144,7 +147,7 @@ const getSharingAccount = async (
  * @param user - purchasing the asset
  * @param assetPubkey - some pubkey of a listing somewhere
  * @param affiliateAccount
- * @param purchaseTx
+ * @param purchaseTx - this fn should result in funds placed in the sharing account
  * @param sharingProgramId
  */
 export const purchaseAssetByAffiliate = async (
@@ -160,23 +163,62 @@ export const purchaseAssetByAffiliate = async (
 
   tx.add(purchaseTx);
 
-  const { sharingPDA } = await getSharingAccount(
+  const { sharingPDA, sharingAccount } = await getSharingAccount(
     connection,
+    program,
     user,
     assetPubkey,
     sharingProgramId
   );
-
-  const sharingAcct = await program.account.sharingAccount.fetch(sharingPDA);
 
   tx.add(
     program.instruction.shareBalance({
       accounts: {
         user,
         sharingAccount: sharingPDA,
-        tokenAccount: sharingAcct.tokenAccount,
-        depositAccount: sharingAcct.depositAccount,
+        tokenAccount: sharingAccount.tokenAccount,
+        depositAccount: sharingAccount.depositAccount,
         affiliateAccount,
+        systemProgram: SystemProgram.programId,
+      },
+    })
+  );
+
+  return { tx };
+};
+
+/**
+ * @param connection
+ * @param user - purchasing the asset
+ * @param assetPubkey - some pubkey of a listing somewhere
+ * @param affiliateAccount
+ * @param purchaseTx - this fn should result in funds placed in the sharing account
+ * @param sharingProgramId
+ */
+export const recover = async (
+  connection: Connection,
+  program: Program<Sharing>,
+  user: PublicKey,
+  assetPubkey: PublicKey,
+  sharingProgramId?: PublicKey
+) => {
+  const tx = new Transaction();
+
+  const { sharingPDA, sharingAccount } = await getSharingAccount(
+    connection,
+    program,
+    user,
+    assetPubkey,
+    sharingProgramId
+  );
+
+  tx.add(
+    program.instruction.recover({
+      accounts: {
+        user,
+        sharingAccount: sharingPDA,
+        tokenAccount: sharingAccount.tokenAccount,
+        depositAccount: sharingAccount.depositAccount,
         systemProgram: SystemProgram.programId,
       },
     })
@@ -204,7 +246,7 @@ export const initSharingAccount = async (
     sharingBump,
     sharingPDA,
     createAccountInstruction,
-  } = await getSharingAccount(connection, user, assetPubkey);
+  } = await getSharingAccount(connection, program, user, assetPubkey);
 
   if (createAccountInstruction) tx.add(createAccountInstruction);
 
@@ -246,7 +288,12 @@ export const updateSharingAccountSplitPercent = async (
   assetPubkey: PublicKey,
   config: { splitPercent: number }
 ) => {
-  const { sharingPDA } = await getSharingAccount(connection, user, assetPubkey);
+  const { sharingPDA } = await getSharingAccount(
+    connection,
+    program,
+    user,
+    assetPubkey
+  );
   const [splitAmount, splitDecimal] = borshifyFloat(config.splitPercent);
 
   const tx = new Transaction();
