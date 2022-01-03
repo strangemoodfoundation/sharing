@@ -28,50 +28,51 @@ const borshifyFloat = (a: number) => {
   return [splitAmount, splitDecimal];
 };
 
-const getAssociatedTokenAddress = async (pubkey: PublicKey) => {
-  console.log('getAssociatedTokenAddress: ', pubkey.toString());
-  const addy = await splToken.Token.getAssociatedTokenAddress(
+// you always get the same address if you pass the same mint and token account owner
+const getAssociatedTokenAddress = async (tokenAcctAuthority: PublicKey) => {
+  const associatedTokenAddress = await splToken.Token.getAssociatedTokenAddress(
     splToken.ASSOCIATED_TOKEN_PROGRAM_ID,
     splToken.TOKEN_PROGRAM_ID,
     splToken.NATIVE_MINT,
-    pubkey,
-    true
+    tokenAcctAuthority
+    // true
   );
 
-  console.log(addy.toString());
-  return addy;
+  return associatedTokenAddress;
 };
 
 const getOrCreateAssociatedTokenAccount = async (
   connection: Connection,
-  pubkey: PublicKey
+  owner: PublicKey,
+  payer: PublicKey
 ) => {
-  const address = await getAssociatedTokenAddress(pubkey);
-  const acctInfo = await connection.getAccountInfo(address);
+  const associatedTokenAddress = await getAssociatedTokenAddress(owner);
+  const acctInfo = await connection.getAccountInfo(associatedTokenAddress);
 
   let itx: TransactionInstruction | null = null;
 
   if (!acctInfo || !acctInfo.owner) {
     console.log(
-      'Account Info does not exist! creating assocaited token account'
+      'Account Info does not exist! Creating Associated token account'
     );
     itx = await splToken.Token.createAssociatedTokenAccountInstruction(
       splToken.ASSOCIATED_TOKEN_PROGRAM_ID,
       splToken.TOKEN_PROGRAM_ID,
       splToken.NATIVE_MINT,
-      address,
-      pubkey,
-      pubkey
+      associatedTokenAddress,
+      owner, // token account owner (which we used to calculate ata)
+      payer
     );
+    console.log(itx);
   } else {
-    console.log('acct info exists:', {
+    console.log('Associated Token Account Info exists:', {
       data: acctInfo.data.toString(),
       owner: acctInfo.owner.toString(),
     });
   }
 
   return {
-    address,
+    address: associatedTokenAddress,
     instruction: itx,
   };
 };
@@ -81,13 +82,9 @@ const getSharingAccounts = async (
   user: PublicKey,
   assetPubkey: PublicKey
 ) => {
-  console.log('getSharingAccounts: ', {
-    user: user.toString(),
-    asset: assetPubkey.toString(),
-  });
   // wrapped SOL account associated with the current user.
   let { address: associatedSolAddress, instruction: createAccountInstruction } =
-    await getOrCreateAssociatedTokenAccount(connection, user);
+    await getOrCreateAssociatedTokenAccount(connection, user, user);
 
   // The sharing account address is derived from the current user's token acct
   let [sharingPDA, sharingBump] = await pda.sharing(
@@ -96,22 +93,45 @@ const getSharingAccounts = async (
   );
 
   // // The sharing account TOKEN address is related to the sharing acct address
-  let associatedSharingSolAddress = await getAssociatedTokenAddress(sharingPDA);
+  const escrowKeypair = Keypair.generate();
+
+  // alloc space for account
+  const createEscrowTokenAcctInstruction = SystemProgram.createAccount({
+    fromPubkey: user,
+    /** Public key of the created account */
+    newAccountPubkey: escrowKeypair.publicKey,
+    /** Amount of lamports to transfer to the created account */
+    lamports: await splToken.Token.getMinBalanceRentForExemptAccount(
+      connection
+    ),
+    /** Amount of space in bytes to allocate to the created account */
+    space: splToken.AccountLayout.span,
+    /** Public key of the program to assign as the owner of the created account */
+    programId: splToken.TOKEN_PROGRAM_ID,
+  });
+
+  // initialize token acct
+  const initEscrowTokenAcctInstruction =
+    splToken.Token.createInitAccountInstruction(
+      splToken.TOKEN_PROGRAM_ID,
+      splToken.NATIVE_MINT,
+      escrowKeypair.publicKey,
+      sharingPDA
+    );
 
   return {
     associatedSolAddress,
-    associatedSharingSolAddress,
+    initEscrowTokenAcctInstruction,
     sharingPDA,
     sharingBump,
     createAccountInstruction,
+    createEscrowTokenAcctInstruction,
+    escrowKeypair,
   };
 };
 
 /**
- * * We need to set the wrapped token account of the sharing keypair to be the destinationSolAcct for strangemood (or another program)
- * This init fn uses the the current user's address to create the sharing acct, and then uses that address to create a wrapped sol acct.
- *
- * Consequences of this approach: when the destination account changes, a new sharing acct is needed. We are okay with this consequence :P
+ * *
  * @param program
  * @param user
  * @param config
@@ -125,14 +145,19 @@ export const initSharingAccount = async (
 ) => {
   const tx = new Transaction();
   const {
-    associatedSharingSolAddress,
+    createEscrowTokenAcctInstruction,
+    initEscrowTokenAcctInstruction,
     associatedSolAddress,
     sharingBump,
     sharingPDA,
     createAccountInstruction,
+    escrowKeypair,
   } = await getSharingAccounts(connection, user, assetPubkey);
 
   if (createAccountInstruction) tx.add(createAccountInstruction);
+  if (createEscrowTokenAcctInstruction)
+    tx.add(createEscrowTokenAcctInstruction);
+  if (initEscrowTokenAcctInstruction) tx.add(initEscrowTokenAcctInstruction);
 
   const [splitAmount, splitDecimal] = borshifyFloat(config.splitPercent);
 
@@ -144,26 +169,24 @@ export const initSharingAccount = async (
     {
       accounts: {
         user,
-        sharingAccount: sharingPDA,
-        depositAccount: associatedSolAddress,
-        tokenAccountPda: associatedSharingSolAddress, // now autogenerated!
-        systemProgram: SystemProgram.programId,
 
-        // for programatically creating PDA:
-        associatedTokenProgram: splToken.ASSOCIATED_TOKEN_PROGRAM_ID,
-        tokenProgram: splToken.TOKEN_PROGRAM_ID,
-        mint: splToken.NATIVE_MINT,
-        rent: web3.SYSVAR_RENT_PUBKEY,
+        // auto generated
+        sharingAccount: sharingPDA,
+
+        tokenAccount: escrowKeypair.publicKey,
+        depositAccount: associatedSolAddress,
+
+        // system defaults
+        systemProgram: SystemProgram.programId,
       },
     }
   );
 
-  console.log('initTx Configured:', initTx);
-
   tx.add(initTx);
-  return tx;
+  return { tx, signers: [escrowKeypair] };
 };
 
+// TODO
 export const updateSharingAccountPercentage = async (
   connection: Connection,
   program: Program<Sharing>,
@@ -172,7 +195,8 @@ export const updateSharingAccountPercentage = async (
   config: { splitPercent: number }
 ) => {
   const {
-    associatedSharingSolAddress,
+    // escrowBump,
+    // escrowTokenPDA,
     associatedSolAddress,
     // sharingBump,
     sharingPDA,
@@ -213,12 +237,7 @@ export const getSharingProvider = async (
 ) => {
   if (!wallet) throw new Error('Wallet Not Connected');
 
-  console.log('here!');
-
   const provider = new Provider(connection, wallet, opts ?? {});
 
-  console.log('not here?');
   return provider;
 };
-
-// TODO: verify we can invoke these with a provider being passed in, or if we need to do what Memo does with passing in a wallet.

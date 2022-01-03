@@ -13,22 +13,15 @@ export const useSharingAccount = () => {
   const initialize = async (splitPercent: number) => {
     if (!wallet.publicKey) throw new Error('Wallet not connected');
 
-    console.log('step 1: initializing in hook!');
     // @ts-ignore
     const provider = await getSharingProvider(connection, wallet);
-
-    console.log('step 2: initializing in hook!');
-    console.log(provider);
-
     const program = await fetchSharingProgram(provider);
-
-    console.log('step 3: initializing in hook!');
 
     const asset = Keypair.generate().publicKey;
 
     console.log('Created a new asset keypair:', asset.toString());
 
-    const trans = await initSharingAccount(
+    const { tx, signers } = await initSharingAccount(
       connection,
       program,
       wallet.publicKey,
@@ -38,11 +31,15 @@ export const useSharingAccount = () => {
       }
     );
 
-    console.log('TRANSACTION', trans);
+    console.log('PRE-SEND-TRANSACTION:', tx);
 
-    // const instr: TransactionInstruction = trans.instructions[0];
+    const sig = await wallet.sendTransaction(tx, connection, {
+      signers,
+    });
+    console.log('SIGNATURE:', sig);
 
-    wallet.sendTransaction(trans, connection);
+    const confirmation = await connection.confirmTransaction(sig);
+    console.log('CONFIRMED TRANSACTION:', confirmation);
   };
 
   return { initialize };

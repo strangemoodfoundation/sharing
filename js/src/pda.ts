@@ -10,7 +10,7 @@ export const pda = {
     sharingProgramId?: PublicKey
   ) => {
     console.log(
-      'Creating PDA for Program ID: ',
+      'Creating Sharing PDA for Program ID: ',
       sharingProgramId ?? ENV.SHARING_PROGRAM_ID
     );
     return web3.PublicKey.findProgramAddress(
