@@ -12,13 +12,15 @@ import {
 } from '@solana/web3.js';
 import { BN, Program, Provider, web3 } from '@project-serum/anchor';
 import { Sharing } from '../../target/types/sharing';
-import { Wallet } from '@project-serum/anchor/dist/cjs/provider';
+import { WalletContextState } from '@solana/wallet-adapter-react';
 
 export default {
   MAINNET,
   DEVNET,
   TESTNET,
 };
+
+export { Sharing };
 
 const borshifyFloat = (a: number) => {
   const pieces = a.toString().split('.');
@@ -329,7 +331,7 @@ export const fetchSharingProgram = async (
 
 export const getSharingProvider = async (
   connection: Connection,
-  wallet: Wallet,
+  wallet: WalletContextState,
   opts?: ConfirmOptions
 ) => {
   if (!wallet) throw new Error('Wallet Not Connected');
