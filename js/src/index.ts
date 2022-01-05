@@ -24,7 +24,8 @@ export { Sharing };
 
 const borshifyFloat = (a: number) => {
   const pieces = a.toString().split('.');
-  const decimalLength = pieces.length > 0 ? pieces[1].length : 0;
+
+  const decimalLength = pieces.length > 1 ? pieces[1].length : 0;
 
   return [(a * 10) ** decimalLength, decimalLength];
 };
@@ -148,7 +149,12 @@ const getSharingAccount = async (
     sharingProgramId
   );
 
-  const sharingAccount = await program.account.sharingAccount.fetch(sharingPDA);
+  let sharingAccount;
+  try {
+    sharingAccount = await program.account.sharingAccount.fetch(sharingPDA);
+  } catch (err) {
+    console.error('Attempted to fetch sharing account; it failed.', err);
+  }
 
   return {
     associatedSolAddress,
@@ -187,6 +193,9 @@ export const purchaseAssetByAffiliate = async (
     assetPubkey,
     sharingProgramId
   );
+
+  // TODO: improve error logic
+  if (!sharingAccount) throw new Error('This sharing account does not exist');
 
   tx.add(
     program.instruction.shareBalance({
@@ -228,6 +237,8 @@ export const recover = async (
     assetPubkey,
     sharingProgramId
   );
+
+  if (!sharingAccount) throw new Error('This sharing account does not exist');
 
   tx.add(
     program.instruction.recover({
@@ -272,7 +283,10 @@ export const initSharingAccount = async (
     sharingProgramId
   );
 
-  if (createAccountInstruction) tx.add(createAccountInstruction);
+  if (createAccountInstruction) {
+    console.log('We do not have a sharing account -- creating it now');
+    tx.add(createAccountInstruction);
+  }
 
   const { tx: escrowTx, escrowKeypair } =
     await createEscrowTokenAccountInstructions(connection, user, sharingPDA);

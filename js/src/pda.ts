@@ -9,17 +9,25 @@ export const pda = {
     assetPubkey: PublicKey,
     sharingProgramId?: PublicKey
   ) => {
-    console.log(
-      'Creating Sharing PDA for Program ID: ',
-      sharingProgramId ?? ENV.SHARING_PROGRAM_ID
-    );
-    return web3.PublicKey.findProgramAddress(
-      [
-        Buffer.from('sharing'),
-        assetPubkey.toBuffer(),
-        depositAccountAddress.toBuffer(),
-      ],
-      sharingProgramId ?? ENV.SHARING_PROGRAM_ID
-    );
+    console.log('Creating Sharing PDA for Program ID: ', {
+      programId:
+        sharingProgramId?.toString() ?? ENV.SHARING_PROGRAM_ID.toString(),
+      depositAccountAddress: depositAccountAddress.toString(),
+      assetPubkey: assetPubkey.toString(),
+    });
+    try {
+      const result = await web3.PublicKey.findProgramAddress(
+        [
+          Buffer.from('sharing'),
+          assetPubkey.toBuffer(),
+          depositAccountAddress.toBuffer(),
+        ],
+        sharingProgramId ?? ENV.SHARING_PROGRAM_ID
+      );
+      return result;
+    } catch (err) {
+      console.error('Could not construct PDA', err);
+      return undefined;
+    }
   },
 };
