@@ -15,7 +15,7 @@
     "@solana/wallet-adapter-react-ui": "^0.6.1",
     "@solana/wallet-adapter-wallets": "^0.11.3",
     "@solana/web3.js": "^1.31.0",
-    "@strangemood/sharing": "../js/dist/js/src",
+    "@strangemood/sharing": "^0.0.0-6",
     "@strangemood/strangemood": "^0.0.0-38",
     "base58-encode": "^0.2.0",
     "next": "12.0.7",

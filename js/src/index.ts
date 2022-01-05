@@ -10,8 +10,8 @@ import {
   Transaction,
   TransactionInstruction,
 } from '@solana/web3.js';
-import { BN, Program, Provider, web3 } from '@project-serum/anchor';
-import { Sharing } from '../../target/types/sharing';
+import { BN, Program, Provider } from '@project-serum/anchor';
+import { Sharing } from './sharing';
 import { WalletContextState } from '@solana/wallet-adapter-react';
 
 export default {
@@ -113,6 +113,21 @@ const createEscrowTokenAccountInstructions = async (
   );
 
   return { tx, escrowKeypair };
+};
+
+export const deriveSharingAccountAddress = async (
+  user: PublicKey,
+  assetPubkey: PublicKey,
+  sharingProgramId?: PublicKey
+) => {
+  const associatedSolAddress = await getAssociatedTokenAddress(user);
+  let [sharingAccountAddress, _] = await pda.sharing(
+    associatedSolAddress,
+    assetPubkey,
+    sharingProgramId
+  );
+
+  return sharingAccountAddress;
 };
 
 const getSharingAccount = async (
@@ -240,7 +255,8 @@ export const initSharingAccount = async (
   program: Program<Sharing>,
   user: PublicKey,
   assetPubkey: PublicKey,
-  config: { splitPercent: number }
+  config: { splitPercent: number },
+  sharingProgramId?: PublicKey
 ) => {
   const tx = new Transaction();
   const {
@@ -248,7 +264,13 @@ export const initSharingAccount = async (
     sharingBump,
     sharingPDA,
     createAccountInstruction,
-  } = await getSharingAccount(connection, program, user, assetPubkey);
+  } = await getSharingAccount(
+    connection,
+    program,
+    user,
+    assetPubkey,
+    sharingProgramId
+  );
 
   if (createAccountInstruction) tx.add(createAccountInstruction);
 
@@ -288,13 +310,15 @@ export const updateSharingAccountSplitPercent = async (
   program: Program<Sharing>,
   user: PublicKey,
   assetPubkey: PublicKey,
-  config: { splitPercent: number }
+  config: { splitPercent: number },
+  sharingProgramId?: PublicKey
 ) => {
   const { sharingPDA } = await getSharingAccount(
     connection,
     program,
     user,
-    assetPubkey
+    assetPubkey,
+    sharingProgramId
   );
   const [splitAmount, splitDecimal] = borshifyFloat(config.splitPercent);
 
