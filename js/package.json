@@ -1,13 +1,13 @@
 {
   "name": "@strangemood/sharing",
-  "version": "0.0.0-8",
+  "version": "0.0.0-10",
   "description": "Share a solana payment via an escrow account",
   "private": false,
   "files": [
     "dist"
   ],
-  "typings": "dist/src/index.d.ts",
-  "main": "dist/scr/index.js",
+  "typings": "dist/index.d.ts",
+  "main": "dist/index.js",
   "repository": {
     "type": "git",
     "url": "https://github.com/strangemoodfoundation/sharing"

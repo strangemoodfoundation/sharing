@@ -8,7 +8,7 @@ export const DEVNET = {
 
 export const TESTNET = {
   SHARING_PROGRAM_ID: new anchor.web3.PublicKey(
-    'Hua5xPD28e5ovftEuzmxRwonzYvsNahGyxX8fJs5f1KD'
+    '2XTyzP5w7DL5dPD8j2ey7GvJ1FGsVeqmJC9AGwB6xvbb'
   ),
 };
 
@@ -20,5 +20,4 @@ export const MAINNET = {
 };
 
 // Figure out env handling lmao
-const NET = 'devnet';
-export const ENV = NET === 'devnet' ? DEVNET : MAINNET;
+export const ENV = process.env.NODE_ENV === 'development' ? TESTNET : MAINNET;

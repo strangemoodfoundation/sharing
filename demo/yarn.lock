@@ -590,10 +590,10 @@
     superstruct "^0.14.2"
     tweetnacl "^1.0.0"
 
-"@strangemood/sharing@^0.0.0-6":
-  version "0.0.0-6"
-  resolved "https://registry.yarnpkg.com/@strangemood/sharing/-/sharing-0.0.0-6.tgz#2a77fdab431c0492917f03a0123cf4618431df3d"
-  integrity sha512-NfSXiBqi82qcDup22n7WkNZpzJr2MTKVYf/Ec/s55PCgBn8MDCtDUOK+lbxGh6JcaabNkbRxYQW5PVBAigkZOA==
+"@strangemood/sharing@^0.0.0-8":
+  version "0.0.0-8"
+  resolved "https://registry.yarnpkg.com/@strangemood/sharing/-/sharing-0.0.0-8.tgz#78e7186c86d83143e58a7061b9b04456aebbe09a"
+  integrity sha512-DHPe8p4A4xmHTXLb9CS16h0nYwgxXLlxsdnTLpeHcbLBUE11IdpNew//WENR+cVh2uI8VGvdHVvhSYW2lMvL7g==
   dependencies:
     "@project-serum/anchor" "^0.19.1-beta.1"
     "@solana/spl-token" "^0.1.8"
