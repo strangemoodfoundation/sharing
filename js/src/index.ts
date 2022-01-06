@@ -13,6 +13,7 @@ import {
 import { BN, Program, Provider } from '@project-serum/anchor';
 import { Sharing } from './sharing';
 import { WalletContextState } from '@solana/wallet-adapter-react';
+import { borshifyFloat, unBorshifyFloat } from './helpers';
 
 export default {
   MAINNET,
@@ -20,15 +21,7 @@ export default {
   TESTNET,
 };
 
-export { Sharing };
-
-const borshifyFloat = (a: number) => {
-  const pieces = a.toString().split('.');
-
-  const decimalLength = pieces.length > 1 ? pieces[1].length : 0;
-
-  return [(a * 10) ** decimalLength, decimalLength];
-};
+export { Sharing, unBorshifyFloat };
 
 const getAssociatedTokenAddress = async (tokenAcctAuthority: PublicKey) => {
   // you always get the same address if you pass the same mint and token account owner
@@ -42,7 +35,7 @@ const getAssociatedTokenAddress = async (tokenAcctAuthority: PublicKey) => {
   return associatedTokenAddress;
 };
 
-const getOrCreateAssociatedTokenAccount = async (
+export const getOrCreateAssociatedTokenAccount = async (
   connection: Connection,
   owner: PublicKey,
   payer: PublicKey
@@ -138,6 +131,7 @@ const getSharingAccount = async (
   assetPubkey: PublicKey,
   sharingProgramId?: PublicKey
 ) => {
+  console.log('I am here! getSharingAccount');
   // wrapped SOL account associated with the current user.
   let { address: associatedSolAddress, instruction: createAccountInstruction } =
     await getOrCreateAssociatedTokenAccount(connection, user, user);
@@ -169,7 +163,7 @@ const getSharingAccount = async (
  * @param connection
  * @param user - purchasing the asset
  * @param assetPubkey - some pubkey of a listing somewhere
- * @param affiliateAccount
+ * @param affiliateAccount - an account that supports wrapped sol
  * @param purchaseTx - this fn should result in funds placed in the sharing account
  * @param sharingProgramId
  */
@@ -315,6 +309,12 @@ export const initSharingAccount = async (
       }
     )
   );
+
+  console.log({
+    msg: 'creating sharing accout',
+    acct: sharingPDA.toString(),
+    tokenAcctForSharingAcct: escrowKeypair.publicKey.toString(),
+  });
 
   return { tx, signers: [escrowKeypair] };
 };
