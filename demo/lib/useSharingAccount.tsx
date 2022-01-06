@@ -15,6 +15,7 @@ import {
   recover,
   Sharing,
   purchaseAssetByAffiliate,
+  sharingPDA,
 } from '@strangemood/sharing';
 import { useEffect, useState } from 'react';
 import { sendAndSign } from './util';
@@ -85,7 +86,13 @@ export const useSharingAccount = () => {
     const asset = new web3.PublicKey(DEMO_ASSET_PUBKEY);
     console.log('Using asset keypair:', asset.toString());
 
-    const { tx } = await recover(connection, program, wallet.publicKey, asset);
+    const { tx } = await recover(
+      connection,
+      program,
+      wallet.publicKey,
+      wallet.publicKey,
+      asset
+    );
 
     return await sendAndSign(connection, wallet, tx);
   };
@@ -93,15 +100,17 @@ export const useSharingAccount = () => {
   const purchaseViaAffiliate = async (
     affiliate: web3.PublicKey,
     listing: PublicKey,
+    solDeposit: PublicKey,
     purchaseTx: { tx: Transaction | TransactionInstruction; signers?: Signer[] }
   ) => {
     if (!wallet.publicKey || !program) throw new Error('Not Connected');
 
+    const sharingAddr = await sharingPDA(solDeposit, listing);
+
     const { tx } = await purchaseAssetByAffiliate(
-      connection,
       program,
       wallet.publicKey,
-      listing,
+      sharingAddr[0],
       affiliate,
       purchaseTx.tx
     );

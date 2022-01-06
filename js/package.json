@@ -1,6 +1,6 @@
 {
   "name": "@strangemood/sharing",
-  "version": "0.0.0-10",
+  "version": "0.0.0-11",
   "description": "Share a solana payment via an escrow account",
   "private": false,
   "files": [

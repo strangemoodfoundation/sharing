@@ -23,6 +23,8 @@ export default {
 
 export { Sharing, unBorshifyFloat };
 
+export const sharingPDA = pda.sharing;
+
 const getAssociatedTokenAddress = async (tokenAcctAuthority: PublicKey) => {
   // you always get the same address if you pass the same mint and token account owner
   const associatedTokenAddress = await splToken.Token.getAssociatedTokenAddress(
@@ -128,13 +130,14 @@ const getSharingAccount = async (
   connection: Connection,
   program: Program<Sharing>,
   user: PublicKey,
+  owner: PublicKey,
   assetPubkey: PublicKey,
   sharingProgramId?: PublicKey
 ) => {
   console.log('I am here! getSharingAccount');
   // wrapped SOL account associated with the current user.
   let { address: associatedSolAddress, instruction: createAccountInstruction } =
-    await getOrCreateAssociatedTokenAccount(connection, user, user);
+    await getOrCreateAssociatedTokenAccount(connection, owner, user);
 
   // The sharing account address is derived from the current user's token acct
   let [sharingPDA, sharingBump] = await pda.sharing(
@@ -162,34 +165,24 @@ const getSharingAccount = async (
 /**
  * @param connection
  * @param user - purchasing the asset
+ * @param owner - creator of the asset
  * @param assetPubkey - some pubkey of a listing somewhere
  * @param affiliateAccount - an account that supports wrapped sol
  * @param purchaseTx - this fn should result in funds placed in the sharing account
  * @param sharingProgramId
  */
 export const purchaseAssetByAffiliate = async (
-  connection: Connection,
   program: Program<Sharing>,
   user: PublicKey,
-  assetPubkey: PublicKey,
+  sharingPDA: PublicKey,
   affiliateAccount: PublicKey,
-  purchaseTx: Transaction | TransactionInstruction,
-  sharingProgramId?: PublicKey
+  purchaseTx: Transaction | TransactionInstruction
 ) => {
   const tx = new Transaction();
 
   tx.add(purchaseTx);
 
-  const { sharingPDA, sharingAccount } = await getSharingAccount(
-    connection,
-    program,
-    user,
-    assetPubkey,
-    sharingProgramId
-  );
-
-  // TODO: improve error logic
-  if (!sharingAccount) throw new Error('This sharing account does not exist');
+  const sharingAccount = await program.account.sharingAccount.fetch(sharingPDA);
 
   tx.add(
     program.instruction.shareBalance({
@@ -210,6 +203,7 @@ export const purchaseAssetByAffiliate = async (
 /**
  * @param connection
  * @param user - purchasing the asset
+ * @param owner - creator of the asset
  * @param assetPubkey - some pubkey of a listing somewhere
  * @param affiliateAccount
  * @param purchaseTx - this fn should result in funds placed in the sharing account
@@ -219,6 +213,7 @@ export const recover = async (
   connection: Connection,
   program: Program<Sharing>,
   user: PublicKey,
+  owner: PublicKey,
   assetPubkey: PublicKey,
   sharingProgramId?: PublicKey
 ) => {
@@ -228,6 +223,7 @@ export const recover = async (
     connection,
     program,
     user,
+    owner,
     assetPubkey,
     sharingProgramId
   );
@@ -273,6 +269,7 @@ export const initSharingAccount = async (
     connection,
     program,
     user,
+    user, // here, user is the owner
     assetPubkey,
     sharingProgramId
   );
@@ -331,6 +328,7 @@ export const updateSharingAccountSplitPercent = async (
     connection,
     program,
     user,
+    user, // here, user is owner
     assetPubkey,
     sharingProgramId
   );
