@@ -5,7 +5,7 @@ use solana_program::{
     program::{invoke},
     entrypoint::ProgramResult
 };
-declare_id!("2XTyzP5w7DL5dPD8j2ey7GvJ1FGsVeqmJC9AGwB6xvbb");
+declare_id!("sharYRHd1q5fGpwNecudQrgQT9dT9U22U8Fi2K7VC6y");
 
 pub fn execute_transfer<'a>(from: AccountInfo<'a>, to: AccountInfo<'a>, amount: u64) -> ProgramResult {
     let ix = transfer(from.key, to.key, amount);
@@ -20,14 +20,9 @@ pub(crate) fn amount_as_float(amount: u64, decimals: u8) -> f64 {
 
 #[program]
 pub mod sharing {
-  
-use super::*;
-  pub fn init_sharing_account(ctx: Context<InitSharingAccount>, _sharing_bump: u8, _asset_id: Pubkey, split_percent_amount: u64, split_percent_decimals: u8) -> ProgramResult {
-    let deposit_account = ctx.accounts.deposit_account.clone().into_inner();
-    if deposit_account.mint != spl_token::native_mint::ID {
-      return Err(SharingProgramError::OnlyWrappedSolIsSupported.into());
-    }
+use super::*; 
 
+  pub fn init_sharing_account(ctx: Context<InitSharingAccount>, _sharing_bump: u8, _asset_id: Pubkey, split_percent_amount: u64, split_percent_decimals: u8) -> ProgramResult {
     let sharing_acc = &mut ctx.accounts.sharing_account; // grab a mutable reference to our MemoAccount struct
     sharing_acc.split_percent_amount = split_percent_amount;
     sharing_acc.split_percent_decimals = split_percent_decimals;
@@ -38,7 +33,7 @@ use super::*;
     Ok(())
   }
 
-  pub fn update_sharing_account_split_percent(ctx: Context<UpdateSharingAccountSplitPercent>, split_percent_amount: u64, split_percent_decimals: u8) -> ProgramResult {
+  pub fn set_sharing_account_split_percent(ctx: Context<SetSharingAccountSplitPercent>, split_percent_amount: u64, split_percent_decimals: u8) -> ProgramResult {
     let sharing_acc = &mut ctx.accounts.sharing_account; // grab a mutable reference to our MemoAccount struct
     sharing_acc.split_percent_amount = split_percent_amount;
     sharing_acc.split_percent_decimals = split_percent_decimals;
@@ -46,7 +41,7 @@ use super::*;
     Ok(())
   }
 
-  pub fn share_balance(ctx: Context<TransferAndShare>) -> ProgramResult {
+  pub fn share_balance(ctx: Context<ShareBalance>) -> ProgramResult {
     let token_acct_balance = ctx.accounts.token_account.amount;
 
     // NOTE: we add 2 to decimals to turn it from "10%" to "0.1"
@@ -96,7 +91,7 @@ pub struct InitSharingAccount<'info> {
 
 
 #[derive(Accounts)]
-pub struct UpdateSharingAccountSplitPercent<'info> {
+pub struct SetSharingAccountSplitPercent<'info> {
   #[account(mut)]
   pub sharing_account: Account<'info, SharingAccount>,
 
@@ -105,14 +100,13 @@ pub struct UpdateSharingAccountSplitPercent<'info> {
 }
 
 #[derive(Accounts)]
-pub struct TransferAndShare<'info> {
+pub struct ShareBalance<'info> {
   #[account(mut)]
   pub sharing_account: Account<'info, SharingAccount>,
   
   // temporary holder! purchasing a listing moves stuff here, which moves to other places
   #[account(mut)]
   pub token_account: Account<'info, TokenAccount>,
-
 
   // owner of the asset / listing / primary holder
   #[account(mut)]
@@ -131,11 +125,11 @@ pub struct Recover<'info> {
   #[account(mut)]
   pub sharing_account: Account<'info, SharingAccount>,
 
-  // temporary holder! purchasing a listing moves stuff here, which moves to other places
+  // An escrow
   #[account(mut)]
   pub token_account: Account<'info, TokenAccount>,
 
-  // owner of the asset / listing / primary holder
+  // Where the funds are heading
   #[account(mut)]
   pub deposit_account: Account<'info, TokenAccount>,
 
@@ -145,9 +139,12 @@ pub struct Recover<'info> {
 
 
 #[account]
-pub struct SharingAccount {    
-  pub token_account: Pubkey, // escrow; the temp holder of tokens
-  pub deposit_account: Pubkey, // where funds are heading
+pub struct SharingAccount { 
+  // escrow; the temp holder of tokens
+  pub token_account: Pubkey,
+
+  // where funds are heading
+  pub deposit_account: Pubkey,
 
   // Note that Borsh doesn't support floats, and so we carry over the pattern
   // used in the token program of having an "amount" and a "decimals".

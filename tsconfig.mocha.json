@@ -1,13 +1,12 @@
 {
-  "include": ["src", "target/types"],
+  "include": ["js", "target/types"],
   "compilerOptions": {
+    "types": ["mocha", "chai"],
     "typeRoots": ["./node_modules/@types"],
     "lib": ["es2015"],
     "module": "commonjs",
     "target": "es6",
     "esModuleInterop": true,
-    // "resolveJsonModule": true,
-    "rootDir": "src",
     "outDir": "dist",
     "declaration": true,
     "sourceMap": true

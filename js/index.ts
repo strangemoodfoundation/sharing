@@ -1,8 +1,7 @@
-import { ENV, MAINNET, TESTNET, DEVNET } from './constants';
+import { MAINNET, TESTNET, DEVNET } from './constants';
 import { pda } from './pda';
 import * as splToken from '@solana/spl-token';
 import {
-  ConfirmOptions,
   Connection,
   Keypair,
   PublicKey,
@@ -11,9 +10,8 @@ import {
   TransactionInstruction,
 } from '@solana/web3.js';
 import { BN, Program, Provider } from '@project-serum/anchor';
-import { Sharing } from './sharing';
-import { WalletContextState } from '@solana/wallet-adapter-react';
 import { borshifyFloat, unBorshifyFloat } from './helpers';
+import { Sharing } from '../target/types/sharing';
 
 export default {
   MAINNET,
@@ -21,15 +19,13 @@ export default {
   TESTNET,
 };
 
-export { Sharing, unBorshifyFloat };
+export { unBorshifyFloat };
 
 export const sharingPDA = pda.sharing;
 
 const getAssociatedTokenAddress = async (tokenAcctAuthority: PublicKey) => {
   // you always get the same address if you pass the same mint and token account owner
-  const associatedTokenAddress = await splToken.Token.getAssociatedTokenAddress(
-    splToken.ASSOCIATED_TOKEN_PROGRAM_ID,
-    splToken.TOKEN_PROGRAM_ID,
+  const associatedTokenAddress = await splToken.getAssociatedTokenAddress(
     splToken.NATIVE_MINT,
     tokenAcctAuthority
   );
@@ -39,32 +35,25 @@ const getAssociatedTokenAddress = async (tokenAcctAuthority: PublicKey) => {
 
 export const getOrCreateAssociatedTokenAccount = async (
   connection: Connection,
+  payer: PublicKey,
   owner: PublicKey,
-  payer: PublicKey
+  mint: PublicKey
 ) => {
-  const associatedTokenAddress = await getAssociatedTokenAddress(owner);
+  const associatedTokenAddress = await splToken.getAssociatedTokenAddress(
+    mint,
+    owner
+  );
   const acctInfo = await connection.getAccountInfo(associatedTokenAddress);
 
   let itx: TransactionInstruction | null = null;
 
   if (!acctInfo || !acctInfo.owner) {
-    console.log(
-      'Account Info does not exist! Creating Associated token account'
-    );
-    itx = await splToken.Token.createAssociatedTokenAccountInstruction(
-      splToken.ASSOCIATED_TOKEN_PROGRAM_ID,
-      splToken.TOKEN_PROGRAM_ID,
-      splToken.NATIVE_MINT,
+    itx = splToken.createAssociatedTokenAccountInstruction(
+      payer,
       associatedTokenAddress,
-      owner, // token account owner (which we used to calculate ata)
-      payer
+      owner,
+      mint
     );
-    console.log(itx);
-  } else {
-    console.log('Associated Token Account Info exists:', {
-      data: acctInfo.data.toString(),
-      owner: acctInfo.owner.toString(),
-    });
   }
 
   return {
@@ -88,7 +77,7 @@ const createEscrowTokenAccountInstructions = async (
       /** Public key of the created account */
       newAccountPubkey: escrowKeypair.publicKey,
       /** Amount of lamports to transfer to the created account */
-      lamports: await splToken.Token.getMinBalanceRentForExemptAccount(
+      lamports: await splToken.getMinimumBalanceForRentExemptAccount(
         connection
       ),
       /** Amount of space in bytes to allocate to the created account */
@@ -100,10 +89,9 @@ const createEscrowTokenAccountInstructions = async (
 
   // initialize token acct
   tx.add(
-    splToken.Token.createInitAccountInstruction(
-      splToken.TOKEN_PROGRAM_ID,
-      splToken.NATIVE_MINT,
+    splToken.createInitializeAccountInstruction(
       escrowKeypair.publicKey,
+      splToken.NATIVE_MINT,
       sharingPDA
     )
   );
@@ -130,14 +118,14 @@ const getSharingAccount = async (
   connection: Connection,
   program: Program<Sharing>,
   user: PublicKey,
+  mint: PublicKey,
   owner: PublicKey,
   assetPubkey: PublicKey,
   sharingProgramId?: PublicKey
 ) => {
-  console.log('I am here! getSharingAccount');
   // wrapped SOL account associated with the current user.
   let { address: associatedSolAddress, instruction: createAccountInstruction } =
-    await getOrCreateAssociatedTokenAccount(connection, owner, user);
+    await getOrCreateAssociatedTokenAccount(connection, user, mint, owner);
 
   // The sharing account address is derived from the current user's token acct
   let [sharingPDA, sharingBump] = await pda.sharing(
@@ -354,7 +342,7 @@ export const updateSharingAccountSplitPercent = async (
 
 export const fetchSharingProgram = async (
   provider: Provider,
-  programId = ENV.SHARING_PROGRAM_ID
+  programId = MAINNET.SHARING_PROGRAM_ID
 ) => {
   const idl = await Program.fetchIdl<Sharing>(programId, provider);
   if (!idl)
@@ -363,16 +351,4 @@ export const fetchSharingProgram = async (
     );
 
   return new Program(idl, programId, provider);
-};
-
-export const getSharingProvider = async (
-  connection: Connection,
-  wallet: WalletContextState,
-  opts?: ConfirmOptions
-) => {
-  if (!wallet) throw new Error('Wallet Not Connected');
-
-  const provider = new Provider(connection, wallet, opts ?? {});
-
-  return provider;
 };

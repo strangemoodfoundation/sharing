@@ -1,12 +1,12 @@
 [programs.localnet]
-sharing = "Hua5xPD28e5ovftEuzmxRwonzYvsNahGyxX8fJs5f1KD"
+sharing = "sharYRHd1q5fGpwNecudQrgQT9dT9U22U8Fi2K7VC6y"
 
 [registry]
 url = "https://anchor.projectserum.com"
 
 [provider]
 cluster = "localnet"
-wallet = "/Users/helenamerk/.config/solana/id.json"
+wallet = "/home/ubuntu/.config/solana/id.json"
 
 [scripts]
 test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"

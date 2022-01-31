@@ -3,35 +3,50 @@
   "version": "0.0.0-11",
   "description": "Share a solana payment via an escrow account",
   "private": false,
+  "module": "./dist/esm/js/index.js",
+  "main": "./dist/cjs/js/index.js",
+  "browser": "./dist/browser/index.js",
+  "license": "MIT",
+  "types": "dist/cjs/js/index.d.ts",
   "files": [
     "dist"
   ],
   "typings": "dist/index.d.ts",
-  "main": "dist/index.js",
   "repository": {
     "type": "git",
     "url": "https://github.com/strangemoodfoundation/sharing"
   },
   "author": "Helena Merk",
-  "license": "MIT",
   "scripts": {
-    "build": "tsc",
-    "prepare": "yarn build"
+    "build": "rimraf dist/ && yarn build:node && yarn build:browser",
+    "build:node": "tsc && tsc -p tsconfig.cjs.json",
+    "build:browser": "rollup --config",
+    "prepublishOnly": "yarn build"
   },
   "dependencies": {
     "@project-serum/anchor": "^0.19.1-beta.1",
-    "@solana/spl-token": "^0.1.8",
+    "@solana/spl-token": "0.2.0-alpha.2",
     "@solana/wallet-adapter-react": "^0.15.0",
     "@solana/web3.js": "^1.31.0"
   },
   "devDependencies": {
+    "@rollup/plugin-commonjs": "^21.0.1",
+    "@rollup/plugin-node-resolve": "^13.0.6",
+    "@rollup/plugin-replace": "^3.0.0",
+    "@rollup/plugin-typescript": "^8.3.0",
+    "@types/chai": "^4.3.0",
+    "@types/mocha": "^9.0.0",
     "@types/node": "16.11.12",
     "@types/react": "17.0.37",
+    "@types/uuid": "^8.3.4",
     "autoprefixer": "^10.4.0",
+    "chai": "^4.3.6",
     "encoding": "^0.1.13",
     "eslint": "8.4.1",
     "eslint-config-next": "12.0.7",
+    "mocha": "^9.2.0",
     "next-transpile-modules": "^9.0.0",
+    "rollup-plugin-terser": "^7.0.2",
     "typescript": "4.5.2"
   },
   "prettier": {

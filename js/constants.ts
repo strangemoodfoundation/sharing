@@ -18,6 +18,3 @@ export const MAINNET = {
     'Hua5xPD28e5ovftEuzmxRwonzYvsNahGyxX8fJs5f1KD'
   ),
 };
-
-// Figure out env handling lmao
-export const ENV = process.env.NODE_ENV === 'development' ? TESTNET : MAINNET;
