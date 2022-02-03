@@ -186,3 +186,41 @@ export async function initSharingAccount(args: {
     signers: [escrowKeypair],
   };
 }
+
+export async function setSplitPercentage(args: {
+  program: Program<Sharing>;
+  signer?: anchor.web3.PublicKey;
+  sharingAccount: AccountInfo<SharingAccount> | PublicKey;
+  splitPercentAmount: anchor.BN;
+  splitPercentDecimals: number;
+}) {
+  let sharingAccount = await asSharingInfo(args.program, args.sharingAccount);
+
+  if (
+    args.splitPercentDecimals <= 0 &&
+    args.splitPercentAmount.toNumber() >= 1
+  ) {
+    throw new Error(
+      "You shouldn't create a sharing account with more than 100% split percentage.\n\nIf decimals=0, and amount=1, then that's 100% (or 1.0). If decimals=2, and amount=5, then that's 5% (or 0.05), because you've taken 5.0, and moved the decimal over 2 places."
+    );
+  }
+
+  let ix = args.program.instruction.setSharingAccountSplitPercent(
+    args.splitPercentAmount,
+    args.splitPercentDecimals,
+    {
+      accounts: {
+        sharingAccount: sharingAccount.publicKey,
+        deposit: sharingAccount.account.deposit,
+        systemProgram: SystemProgram.programId,
+        user: args.program.provider.wallet.publicKey,
+      },
+    }
+  );
+
+  let instructions = [ix];
+
+  return {
+    instructions,
+  };
+}
