@@ -47,7 +47,15 @@ use super::*;
   }
 
   pub fn set_sharing_account_split_percent(ctx: Context<SetSharingAccountSplitPercent>, split_percent_amount: u64, split_percent_decimals: u8) -> ProgramResult {
+
+    let user = ctx.accounts.user.clone();
+    let deposit = ctx.accounts.deposit.clone().into_inner();
     let sharing_acc = &mut ctx.accounts.sharing_account; // grab a mutable reference to our MemoAccount struct
+
+    if deposit.owner != *user.key {
+      return Err(SharingError::UserIsNotDepositOwner.into())
+    }
+    
     sharing_acc.split_percent_amount = split_percent_amount;
     sharing_acc.split_percent_decimals = split_percent_decimals;
 
@@ -124,7 +132,7 @@ pub struct InitSharingAccount<'info> {
 
   // The in-between place where the tokens will go, before calling "share"
   #[account(
-    init, 
+    init,
     payer=user,
     token::mint = mint,
     token::authority = escrow_authority,
@@ -149,8 +157,10 @@ pub struct InitSharingAccount<'info> {
 
 #[derive(Accounts)]
 pub struct SetSharingAccountSplitPercent<'info> {
-  #[account(mut)]
+  #[account(mut, has_one=deposit)]
   pub sharing_account: Account<'info, SharingAccount>,
+
+  pub deposit: Account<'info, TokenAccount>,
 
   pub user: Signer<'info>,
   pub system_program: Program<'info, System>,
@@ -225,3 +235,12 @@ pub struct SharingAccount {
   pub split_percent_decimals: u8,
 }
 
+
+#[error]
+pub enum SharingError {
+  
+  // You tried to modify the sharing account, but you are not the owner 
+  // of the deposit that that sharing account is associated with. 
+  #[msg("User Is Not Deposit Owner")]
+  UserIsNotDepositOwner,
+}
