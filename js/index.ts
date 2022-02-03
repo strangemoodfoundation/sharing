@@ -1,5 +1,5 @@
 import { MAINNET, TESTNET, DEVNET } from './constants';
-import { pda } from './pda';
+import { pda as _pda } from './pda';
 import * as splToken from '@solana/spl-token';
 import {
   Connection,
@@ -21,19 +21,9 @@ export default {
 
 export { unBorshifyFloat };
 
-export const sharingPDA = pda.sharing;
+export const pda = _pda;
 
-const getAssociatedTokenAddress = async (tokenAcctAuthority: PublicKey) => {
-  // you always get the same address if you pass the same mint and token account owner
-  const associatedTokenAddress = await splToken.getAssociatedTokenAddress(
-    splToken.NATIVE_MINT,
-    tokenAcctAuthority
-  );
-
-  return associatedTokenAddress;
-};
-
-export const getOrCreateAssociatedTokenAccount = async (
+const getOrCreateAssociatedTokenAccount = async (
   connection: Connection,
   payer: PublicKey,
   owner: PublicKey,
@@ -324,7 +314,7 @@ export const updateSharingAccountSplitPercent = async (
 
   const tx = new Transaction();
   tx.add(
-    program.instruction.updateSharingAccountSplitPercent(
+    program.instruction.setSharingAccountSplitPercent(
       new BN(splitAmount),
       new BN(splitDecimal),
       {

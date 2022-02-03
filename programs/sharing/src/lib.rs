@@ -1,34 +1,47 @@
 use anchor_lang::prelude::*;
-use anchor_spl::{token::{TokenAccount}};
+use anchor_spl::{token::{TokenAccount, Mint, Token}};
 use solana_program::{
-    system_instruction::{transfer}, 
-    program::{invoke},
     entrypoint::ProgramResult
 };
 declare_id!("sharYRHd1q5fGpwNecudQrgQT9dT9U22U8Fi2K7VC6y");
 
-pub fn execute_transfer<'a>(from: AccountInfo<'a>, to: AccountInfo<'a>, amount: u64) -> ProgramResult {
-    let ix = transfer(from.key, to.key, amount);
-    invoke(&ix, &[from.clone(), to.clone()])?;
-    Ok(())
+// Transfer from one token account to another using the Token Program
+pub fn token_transfer<'a>(
+  token_program: AccountInfo<'a>,
+  from: AccountInfo<'a>,
+  to: AccountInfo<'a>,
+  authority: AccountInfo<'a>,
+  bump: u8,
+  amount: u64,
+) -> ProgramResult {
+  let cpi_program = token_program;
+  let from_copy = from.key.clone();
+  let cpi_accounts = anchor_spl::token::Transfer {
+      from,
+      to,
+      authority,
+  };
+  let seeds = &[b"authority", from_copy.as_ref(), &[bump]];
+  let signers = &[&seeds[..]];
+  let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signers);
+  anchor_spl::token::transfer(cpi_ctx, amount)
 }
 
 pub(crate) fn amount_as_float(amount: u64, decimals: u8) -> f64 {
     amount as f64 / i32::pow(10, decimals.into()) as f64
 }
 
-
 #[program]
 pub mod sharing {
-use super::*; 
+use super::*;
 
-  pub fn init_sharing_account(ctx: Context<InitSharingAccount>, _sharing_bump: u8, _asset_id: Pubkey, split_percent_amount: u64, split_percent_decimals: u8) -> ProgramResult {
+  pub fn init_sharing_account(ctx: Context<InitSharingAccount>, _sharing_bump: u8,  _escrow_authority_bump: u8, split_percent_amount: u64, split_percent_decimals: u8) -> ProgramResult {
     let sharing_acc = &mut ctx.accounts.sharing_account; // grab a mutable reference to our MemoAccount struct
     sharing_acc.split_percent_amount = split_percent_amount;
     sharing_acc.split_percent_decimals = split_percent_decimals;
     
-    sharing_acc.deposit_account = ctx.accounts.deposit_account.key();
-    sharing_acc.token_account = ctx.accounts.token_account.key();
+    sharing_acc.deposit = ctx.accounts.deposit.key();
+    sharing_acc.escrow = ctx.accounts.escrow.key();
 
     Ok(())
   }
@@ -41,36 +54,61 @@ use super::*;
     Ok(())
   }
 
-  pub fn share_balance(ctx: Context<ShareBalance>) -> ProgramResult {
-    let token_acct_balance = ctx.accounts.token_account.amount;
+  pub fn share_balance(ctx: Context<ShareBalance>, escrow_authority_bump: u8) -> ProgramResult {
+    let token_acct_balance = ctx.accounts.escrow.amount;
 
-    // NOTE: we add 2 to decimals to turn it from "10%" to "0.1"
-    let affiliate_cut = amount_as_float(ctx.accounts.sharing_account.split_percent_amount,ctx.accounts.sharing_account.split_percent_decimals + 2 );
+    let affiliate_cut = amount_as_float(
+      ctx.accounts.sharing.split_percent_amount,
+      ctx.accounts.sharing.split_percent_decimals);
 
     // let forDepositAcct = 1;
-    let acciliate_account_amt_to_transfer = token_acct_balance as f64 * affiliate_cut;
-    let deposit_account_amt_to_transfer = token_acct_balance - acciliate_account_amt_to_transfer as u64;
-    execute_transfer(ctx.accounts.affiliate_account.to_account_info(), ctx.accounts.deposit_account.to_account_info(), acciliate_account_amt_to_transfer as u64)?;
-    execute_transfer(ctx.accounts.token_account.to_account_info(), ctx.accounts.deposit_account.to_account_info(), deposit_account_amt_to_transfer)?;
+    let affiliate_account_amt_to_transfer = (token_acct_balance as f64 * affiliate_cut) as u64;
+    let deposit_account_amt_to_transfer = token_acct_balance - affiliate_account_amt_to_transfer;
+
+    // Transfer to the affiliate_account account
+    token_transfer(
+      ctx.accounts.token_program.to_account_info(), 
+      ctx.accounts.escrow.to_account_info(), 
+        ctx.accounts.affiliate.to_account_info(),
+        ctx.accounts.escrow_authority.to_account_info(),
+        escrow_authority_bump,
+        affiliate_account_amt_to_transfer 
+    )?;
+
+    // Transfer to the deposit account
+    token_transfer(
+      ctx.accounts.token_program.to_account_info(), 
+      ctx.accounts.escrow.to_account_info(), 
+      ctx.accounts.deposit.to_account_info(),
+      ctx.accounts.escrow_authority.to_account_info(),
+      escrow_authority_bump,
+      deposit_account_amt_to_transfer
+    )?;
 
     Ok(())
   }
 
   // sends whatever is left back to the OG deposit account, can be called by anyone.
-  pub fn recover(ctx: Context<Recover>) -> ProgramResult {
-    let token_acct_balance = ctx.accounts.token_account.amount;
-    execute_transfer(ctx.accounts.token_account.to_account_info(), ctx.accounts.deposit_account.to_account_info(), token_acct_balance)?;
+  pub fn recover(ctx: Context<Recover>, escrow_authority_bump:u8) -> ProgramResult {
+    let token_acct_balance = ctx.accounts.escrow.amount;
+    token_transfer(
+      ctx.accounts.token_program.to_account_info(), 
+      ctx.accounts.escrow.to_account_info(), 
+      ctx.accounts.deposit.to_account_info(), 
+      ctx.accounts.escrow_authority.to_account_info(), 
+      escrow_authority_bump,
+      token_acct_balance)?;
 
     Ok(())
   }
 }
 
 #[derive(Accounts)]
-#[instruction(sharing_bump: u8, asset_id: Pubkey)]
+#[instruction(sharing_bump: u8, escrow_authority_bump: u8)]
 pub struct InitSharingAccount<'info> {
   #[account(
     init, 
-    seeds=[b"sharing", asset_id.as_ref(), deposit_account.key().as_ref()],
+    seeds=[b"sharing", escrow.key().as_ref()],
     bump=sharing_bump,
     payer=user,
     space= 8 // all accounts need 8 bytes for the account discriminator prepended to the account
@@ -81,12 +119,31 @@ pub struct InitSharingAccount<'info> {
   )]
   pub sharing_account: Account<'info, SharingAccount>,
 
-  pub token_account: Account<'info, TokenAccount>,
+  // The token type that the accounts should conform to
+  pub mint: Account<'info, Mint>,
 
-  pub deposit_account: Account<'info, TokenAccount>,
+  // The in-between place where the tokens will go, before calling "share"
+  #[account(
+    init, 
+    payer=user,
+    token::mint = mint,
+    token::authority = escrow_authority,
+  )]
+  pub escrow: Account<'info, TokenAccount>,
+
+  #[account(
+    seeds=[b"authority", escrow.key().as_ref()],
+    bump=escrow_authority_bump,
+  )]
+  pub escrow_authority: AccountInfo<'info>,
+
+  // The final place where the tokens will go for the original creator, after calling "share"
+  pub deposit: Account<'info, TokenAccount>,
 
   pub user: Signer<'info>,
-  pub system_program: Program<'info, System>, // <--- Anchor boilerplate
+  pub system_program: Program<'info, System>, 
+  pub token_program: Program<'info, Token>,
+  pub rent: Sysvar<'info, Rent>,
 }
 
 
@@ -96,55 +153,70 @@ pub struct SetSharingAccountSplitPercent<'info> {
   pub sharing_account: Account<'info, SharingAccount>,
 
   pub user: Signer<'info>,
-  pub system_program: Program<'info, System>, // <--- Anchor boilerplate
+  pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
+#[instruction(escrow_authority_bump: u8)]
 pub struct ShareBalance<'info> {
-  #[account(mut)]
-  pub sharing_account: Account<'info, SharingAccount>,
+  #[account(mut, has_one=escrow, has_one=deposit)]
+  pub sharing: Account<'info, SharingAccount>,
   
-  // temporary holder! purchasing a listing moves stuff here, which moves to other places
+  // In-between account. When a purchase happens, funds move here, and then are "split" when
+  // share is called.
   #[account(mut)]
-  pub token_account: Account<'info, TokenAccount>,
+  pub escrow: Account<'info, TokenAccount>,
+
+  #[account(
+    seeds=[b"authority", escrow.key().as_ref()],
+    bump=escrow_authority_bump,
+  )]
+  pub escrow_authority: AccountInfo<'info>,
 
   // owner of the asset / listing / primary holder
   #[account(mut)]
-  pub deposit_account: Account<'info, TokenAccount>,
+  pub deposit: Account<'info, TokenAccount>,
 
   // receives a portion!
   #[account(mut)]
-  pub affiliate_account: Account<'info, TokenAccount>,
+  pub affiliate: Account<'info, TokenAccount>,
 
+  pub token_program: Program<'info, Token>,
   pub user: Signer<'info>,
-  pub system_program: Program<'info, System>, // <--- Anchor boilerplate
+  pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
+#[instruction(escrow_authority_bump: u8)]
 pub struct Recover<'info> {
   #[account(mut)]
-  pub sharing_account: Account<'info, SharingAccount>,
+  pub sharing: Account<'info, SharingAccount>,
 
   // An escrow
   #[account(mut)]
-  pub token_account: Account<'info, TokenAccount>,
+  pub escrow: Account<'info, TokenAccount>,
+
+  #[account(
+    seeds=[b"authority", escrow.key().as_ref()],
+    bump=escrow_authority_bump,
+  )]
+  pub escrow_authority: AccountInfo<'info>,
 
   // Where the funds are heading
   #[account(mut)]
-  pub deposit_account: Account<'info, TokenAccount>,
-
-  pub user: Signer<'info>,
-  pub system_program: Program<'info, System>, // <--- Anchor boilerplate
+  pub deposit: Account<'info, TokenAccount>,
+  pub token_program: Program<'info, Token>,
+  pub system_program: Program<'info, System>,
 }
 
 
 #[account]
 pub struct SharingAccount { 
   // escrow; the temp holder of tokens
-  pub token_account: Pubkey,
+  pub escrow: Pubkey,
 
   // where funds are heading
-  pub deposit_account: Pubkey,
+  pub deposit: Pubkey,
 
   // Note that Borsh doesn't support floats, and so we carry over the pattern
   // used in the token program of having an "amount" and a "decimals".
@@ -153,8 +225,3 @@ pub struct SharingAccount {
   pub split_percent_decimals: u8,
 }
 
-#[error]
-pub enum SharingProgramError {
-    #[msg("Only Wrapped Sol Is Supported: Deposit Account and Token Account must be Wrapped SOL")]
-    OnlyWrappedSolIsSupported,
-}
